@@ -241,11 +241,42 @@ class portfolio_dataset:
         self.workable_data['book_value_ratio'] = np.vectorize(book_value_to_price_calculator) \
             (self.workable_data['book_value'], self.workable_data['marketCap'])
         self.workable_data['last_change'] = self.workable_data["%_change"].shift(1)
-        self.workable_data = self.workable_data[['start','%_change', 'marketCap', 'p/e', 'book_value_ratio', 'last_change']]
+        self.workable_data.set_index('start')
+        self.workable_data = self.workable_data[
+            ['%_change', 'marketCap', 'p/e', 'book_value_ratio', 'last_change']]
 
 
 if __name__ == "__main__":
-    test = portfolio_dataset('AAPL')
-    test.data_set_maker()
-    print(test.workable_data)
-    test.workable_data['start'].to_csv('first_trading_day_monthly', index=False)
+    dated_spy_constituent = get_dated_sp500_constituent()
+    spy_constituent = get_all_sp500_constituent(dated_spy_constituent)
+    spy_constituent_data = {}
+    dates = pd.read_csv('first_trading_day_monthly')['start'].tolist()
+    dates = [datetime.datetime.strptime(date, '%Y-%m-%d').date() for date in dates]
+
+    trading_day_dated_constituent = {}
+    for date in dates:
+        res = dated_spy_constituent.get(date) or dated_spy_constituent[
+            min(dated_spy_constituent.keys(), key=lambda key: abs(key - date))]
+        trading_day_dated_constituent[date] = res
+
+    for ticker in spy_constituent:
+        print(ticker)
+        try:
+            dataset = portfolio_dataset(ticker)
+            dataset.data_set_maker()
+            spy_constituent_data[dataset.symbol] = dataset.workable_data
+        except:
+            pass
+    dates_spy_data = {}
+    for trading_month, tickers in trading_day_dated_constituent.items():
+        df = pd.DataFrame(columns=['%_change', 'marketCap', 'p/e', 'book_value_ratio', 'last_change'])
+        for ticker in tickers:
+            try:
+                selected_symbol_data = spy_constituent_data[ticker]
+                selected_row = selected_symbol_data.iloc[[trading_month]]
+                df.loc[ticker] = selected_row
+            except ValueError:
+                pass
+        dates_spy_data[trading_month] = df
+    for key, values in dates_spy_data.items():
+        values.to_csv('data/'+str(key)+'.csv')
